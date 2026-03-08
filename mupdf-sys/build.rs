@@ -271,7 +271,11 @@ enum Build {
 
 impl Build {
     fn new(target: &Target) -> Self {
-        if target.env == "msvc" {
+        let force_make = std::env::var("USE_MAKE")
+            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+            .unwrap_or(false);
+
+        if !force_make && target.env == "msvc" {
             Self::Msbuild(Msbuild::default())
         } else {
             Self::Make(Make::default())
