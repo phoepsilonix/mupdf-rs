@@ -239,3 +239,16 @@ regex = "1.11"
 [dependencies]
 zerocopy = { version = "0.8.17", features = ["derive"], optional = true }
 
+[package.metadata.cross.target.x86_64-pc-windows-gnu]
+env = [
+    "XCFLAGS=-DHAVE_OBJCOPY=0",
+    "HAVE_OBJCOPY=no",
+    "OS=mingw"
+]
+
+[package.metadata.cross.target.x86_64-pc-windows-msvc]
+env = [
+    "XCFLAGS=-DHAVE_OBJCOPY=0",
+    "HAVE_OBJCOPY=no",
+    "OS=mingw"
+]

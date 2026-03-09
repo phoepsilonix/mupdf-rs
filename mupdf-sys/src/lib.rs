@@ -6,6 +6,13 @@
 
 include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
 
+#[cfg_attr(target_env = "msvc", derive(Copy, Clone))]
+#[cfg_attr(target_env = "msvc", repr(align(16)))]
+#[cfg(target_env = "msvc")]
+pub struct max_align_t {
+    data: [u8; 16],
+}
+
 use core::ffi::{c_int, CStr};
 
 /// This function allocates a new device and returns a pointer to it if no error occured. For the

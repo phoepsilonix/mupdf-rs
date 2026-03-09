@@ -597,6 +597,7 @@ impl<T: NativeDevice + ?Sized> NativeDevice for Rc<RefCell<T>> {
 pub(crate) fn create<D: NativeDevice>(device: D) -> Result<Device, Error> {
     const {
         assert!(align_of::<D>() <= align_of::<max_align_t>());
+        //assert!(align_of::<D>() <= core::mem::align_of::<usize>());
     }
 
     let ret = unsafe {

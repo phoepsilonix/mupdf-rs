@@ -46,6 +46,47 @@ fn run() -> Result<()> {
 
     let sysroot = find_clang_sysroot(&target)?;
 
+    let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
+    let target_env = env::var("CARGO_CFG_TARGET_ENV").unwrap_or_default();
+    if target_os == "windows" {
+        println!("cargo:rustc-env=TOFU=1");
+        println!("cargo:rustc-env=TOFU_CJK=1");
+        println!("cargo:rustc-env=TOFU_NOTO=1");
+        println!("cargo:rustc-env=TOFU_SYMBOL=1");
+        println!("cargo:rustc-env=TOFU_EMOJI=1");
+        println!("cargo:rustc-env=TOFU_SIL=1");
+
+        // MakerulesでOSがLinuxの場合、HAVE_OBJCOPYが設定されているため、回避する。
+        println!("cargo:rustc-env=OS=mingw"); // Linux判定回避
+        println!("cargo:rustc-env=HAVE_OBJCOPY=no"); // Linux判定回避
+        println!("cargo:rustc-env=XCFLAGS=-DHAVE_OBJCOPY=0");
+        println!("cargo:rustc-env=CFLAGS=-DHAVE_OBJCOPY=0");
+        println!("cargo:rustc-env=CXXFLAGS=-DHAVE_OBJCOPY=0");
+        println!("cargo:rustc-env=XCXXFLAGS=-DHAVE_OBJCOPY=0");
+        println!("cargo:rustc-cfg=noconfig_have_objcopy");
+
+        // zlib unistd.h 回避
+        println!("cargo:rustc-cfg=noconfig_have_unistd_h");
+        println!("cargo:rustc-cfg=noconfig_z_have_unistd_h");
+        println!("cargo:rustc-env=NO_UNISTD_H=1");
+
+        // clang-cl に C++17 を強制
+        println!("cargo:rustc-env=TESSERACT_CXX17=1");
+        println!("cargo:rustc-env=LIBSTDCXX_VERSION=201709"); // C++17相当
+                                                              //$(CXX_CMD) $(WARNING_CFLAGS) $(LIB_CFLAGS) $(THIRD_CFLAGS) $(TESSERACT_CFLAGS) $(TESSERACT_LANGFLAGS) $(LEPTONICA_CFLAGS)
+        println!("cargo:rustc-env=_HAS_CXX17=1");
+
+        if target_env == "msvc" {
+            println!("cargo:rustc-link-arg=/NODEFAULTLIB:stdc++");
+            println!("cargo:rustc-link-lib=msvcrt");
+        }
+
+        // Tesseract用C++17フラグ
+        println!("cargo:rustc-env=TESSERACT_CXXFLAGS=-std=c++17 -D_GLIBCXX_USE_CXX11_ABI=0");
+
+        println!("cargo:rerun-if-changed=build.rs");
+        println!("cargo:rerun-if-changed=Makefile");
+    }
     let docs = env::var_os("DOCS_RS").is_some();
     if !docs {
         let build_dir = out_dir.join("build");
@@ -134,6 +175,12 @@ fn build_wrapper(target: &Target) -> Result<()> {
     if target.os == "android" {
         build.define("HAVE_ANDROID", None);
     }
+    if target.os == "windows" {
+        build.define("HAVE_OBJCOPY", "no");
+        // MakerulesでOSがLinuxの場合、HAVE_OBJCOPYが設定されているため、回避する。
+        build.define("OS", "mingw"); // Linux判定回避
+    }
+
     build.try_compile("mupdf-wrapper")?;
     Ok(())
 }
@@ -306,10 +353,41 @@ impl Build {
         self.fz_enable("EPUB", cfg!(feature = "epub"));
         self.fz_enable("JS", cfg!(feature = "js"));
 
+        let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
+        let target_env = env::var("CARGO_CFG_TARGET_ENV").unwrap_or_default();
         for font in &FONTS {
             // TOFU flags skip fonts when set to 1
             // So we invert: all-fonts=true means TOFU=0 (include fonts)
-            self.define_bool(font, !cfg!(feature = "all-fonts"));
+            if target_os != "windows" {
+                self.define_bool(font, !cfg!(feature = "all-fonts"));
+            } else {
+                //self.define_bool(font, false);
+                self.define_bool(font, true);
+            }
+        }
+        if target_os == "windows" {
+            // MakerulesでOSがLinuxの場合、HAVE_OBJCOPYが設定されているため、回避する。
+            self.define("OS", "mingw"); // Linux判定回避
+            self.define_bool("HAVE_OBJCOPY", false);
+            self.define("HAVE_OBJCOPY", "no");
+            //self.fz_enable("NOTO", false);
+            //self.fz_enable("EMBEDDED_FONTS", false);
+            // ホストで生成
+            let generate_cmd = std::process::Command::new("make")
+                .current_dir(build_dir)
+                .args([
+                    "generate",
+                    "XCFLAGS=-DHAVE_OBJCOPY=no",
+                    "CFLAGS=-DHAVE_OBJCOPY=no",
+                    "CXXFLAGS=-DHAVE_OBJCOPY=no",
+                    "XCXXFLAGS=-DHAVE_OBJCOPY=no",
+                ])
+                .status()
+                .map_err(|e| format!("make generate failed: {e}"))?;
+
+            if !generate_cmd.success() {
+                return Err("make generate failed".into());
+            }
         }
 
         match self {
