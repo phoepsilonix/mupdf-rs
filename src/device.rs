@@ -188,8 +188,8 @@ impl Device {
         Self { dev, list }
     }
 
-    pub fn from_native<D: NativeDevice>(device: D) -> Result<Self, Error> {
-        native::create(device)
+    pub fn from_native<D: NativeDevice, max_align_t>(device: D) -> Result<Self, Error> {
+        native::create::<D, max_align_t>(device)
     }
 
     pub fn from_pixmap_with_clip(pixmap: &Pixmap, clip: IRect) -> Result<Self, Error> {

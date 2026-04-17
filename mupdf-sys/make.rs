@@ -217,12 +217,16 @@ impl Make {
         self.build.warnings(false);
 
         let compiler = self.build.get_compiler();
-        self.make_var("CC", compiler.path());
+        // 親モジュール (build.rs) の関数を呼び出す
+        self.make_var("CC", crate::to_portable_path(compiler.path()));
+
+        //self.make_var("CC", compiler.path());
         self.make_var("XCFLAGS", compiler.cflags_env());
 
+        // --- C++コンパイラの設定 ---
         self.build.cpp(true);
         let compiler = self.build.get_compiler();
-        self.make_var("CXX", compiler.path());
+        self.make_var("CXX", crate::to_portable_path(compiler.path()));
         self.make_var("XCXXFLAGS", compiler.cflags_env());
 
         let make = if cfg!(any(
