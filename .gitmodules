@@ -1,3 +1,5 @@
 [submodule "mupdf-sys/mupdf"]
 	path = mupdf-sys/mupdf
 	url = https://github.com/phoepsilonix/mupdf.git
+	branch = phoepsilonix
+	shallow = true
