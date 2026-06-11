@@ -185,7 +185,7 @@ impl Page {
 
     fn drawings_internal(&self, cookie: Option<&Cookie>) -> Result<Vec<Drawing>, Error> {
         let recorder = Rc::new(RefCell::new(DrawingDevice::default()));
-        let device = Device::from_native(recorder.clone())?;
+        let device = Device::from_native::<Rc<RefCell<DrawingDevice>>, max_align_t>(recorder.clone())?;
 
         match cookie {
             Some(cookie) => self.run_with_cookie(&device, &Matrix::IDENTITY, cookie)?,
