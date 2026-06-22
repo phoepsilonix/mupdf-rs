@@ -46,6 +46,36 @@ fn run() -> Result<()> {
 
     let sysroot = find_clang_sysroot(&target)?;
 
+    let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
+    let target_env = env::var("CARGO_CFG_TARGET_ENV").unwrap_or_default();
+
+    if target_os == "windows" {
+        // MakerulesでOSがLinuxの場合、HAVE_OBJCOPYが設定されているため、回避する。
+        println!("cargo:rustc-env=OS=mingw"); // Linux判定回避
+        println!("cargo:rustc-env=HAVE_OBJCOPY=no"); // Linux判定回避
+        println!("cargo:rustc-env=XCFLAGS=-UHAVE_OBJCOPY");
+
+        // zlib unistd.h 回避
+        println!("cargo:rustc-cfg=noconfig_have_unistd_h");
+        println!("cargo:rustc-cfg=noconfig_z_have_unistd_h");
+        println!("cargo:rustc-env=NO_UNISTD_H=1");
+
+        // clang-cl に C++17 を強制
+        println!("cargo:rustc-env=TESSERACT_CXX17=1");
+        println!("cargo:rustc-env=_HAS_CXX17=1");
+        println!("cargo:rustc-env=LIBSTDCXX_VERSION=201709"); // C++17相当
+                                                              //$(CXX_CMD) $(WARNING_CFLAGS) $(LIB_CFLAGS) $(THIRD_CFLAGS) $(TESSERACT_CFLAGS) $(TESSERACT_LANGFLAGS) $(LEPTONICA_CFLAGS)
+                                                              // Tesseract用C++17フラグ
+        println!("cargo:rustc-env=TESSERACT_CXXFLAGS=-std=c++17 -D_GLIBCXX_USE_CXX11_ABI=0");
+
+        if target_env == "msvc" {
+            println!("cargo:rustc-link-arg=/NODEFAULTLIB:stdc++");
+            println!("cargo:rustc-link-lib=msvcrt");
+        }
+
+        println!("cargo:rerun-if-changed=build.rs");
+        println!("cargo:rerun-if-changed=Makefile");
+    }
     let docs = env::var_os("DOCS_RS").is_some();
     if !docs {
         let build_dir = out_dir.join("build");
@@ -219,6 +249,11 @@ fn build_wrapper() -> Result<()> {
         }
     }
     build.include("mupdf/include").include("wrapper");
+    let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
+    if target_os == "windows" {
+        build.define("HAVE_OBJCOPY", "no");
+        build.define("OS", "ming");
+    }
     build.try_compile("mupdf-wrapper")?;
     Ok(())
 }
@@ -252,6 +287,10 @@ fn generate_bindings(target: &Target, path: &Path, sysroot: Option<String>) -> R
 
     if target.os == "emscripten" {
         builder = builder.clang_arg("-fvisibility=default");
+    }
+
+    if target.os == "windows" {
+        builder = builder.clang_arg("-UHAVE_OBJCOPY");
     }
 
     builder = builder
@@ -432,10 +471,40 @@ impl Build {
             );
         }
 
+        let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
+        let target_env = env::var("CARGO_CFG_TARGET_ENV").unwrap_or_default();
+
         for font in &FONTS {
             // TOFU flags skip fonts when set to 1. Keep non-URW fonts out of
             // mupdf-sys so the crate remains below crates.io's package limit.
-            self.define_bool(font, true);
+            if target_os != "windows" {
+                self.define_bool(font, true);
+                //self.define_bool(font, !cfg!(feature = "all-fonts"));
+            } else {
+                self.define_bool(font, false);
+                //self.define_bool(font, true);
+            }
+        }
+        if target_os == "windows" {
+            // MakerulesでOSがLinuxの場合、HAVE_OBJCOPYが設定されているため、回避する。
+            self.define("OS", "mingw"); // Linux判定回避
+            self.define_bool("HAVE_OBJCOPY", false);
+            self.define("HAVE_OBJCOPY", "no");
+            self.define("XCFLAGS", "-UHAVE_OBJCOPY");
+
+            let compiler = cc::Build::new().get_compiler();
+            let safe_cc = to_portable_path(compiler.path());
+            // ホストで生成
+            let generate_cmd = std::process::Command::new("make")
+                .current_dir(build_dir)
+                .args(["generate"])
+                .arg(format!("CC={}", safe_cc))
+                .status()
+                .map_err(|e| format!("make generate failed: {e}"))?;
+
+            if !generate_cmd.success() {
+                return Err("make generate failed".into());
+            }
         }
 
         if !cfg!(feature = "base14-fonts") {
@@ -509,5 +578,19 @@ impl bindgen::callbacks::ParseCallbacks for ZerocopyDeriveCallbacks {
         } else {
             vec![]
         }
+    }
+}
+
+pub(crate) fn to_portable_path(path: &std::path::Path) -> String {
+    let path_str = path.to_string_lossy();
+
+    if cfg!(windows) {
+        // Windowsホストの場合のみ、GNU Make/Bashが解釈ミスしない形式に変換
+        // 1. バックスラッシュをスラッシュに置換
+        // 2. スペース対策で全体をダブルクォートで囲む
+        format!("\"{}\"", path_str.replace('\\', "/"))
+    } else {
+        // Unix系（Linux/macOS）ホストではそのまま
+        path_str.into_owned()
     }
 }
