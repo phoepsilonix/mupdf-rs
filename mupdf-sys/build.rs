@@ -282,6 +282,38 @@ fn find_clang_sysroot(target: &Target) -> Result<Option<String>> {
         return Ok(Some(sysroot));
     }
 
+    if target.os == "android" {
+        // bindgen は cc-rs とは別経路 (libclang を直接使用) でヘッダを解析するため、
+        // TARGET_CC (NDK のクロスコンパイラ) を見ても自動的には sysroot を
+        // 認識しない。ホストの glibc ヘッダ (features-time64.h 等) を誤って
+        // 読みに行ってしまい "bits/wordsize.h not found" のようなエラーになる。
+        //
+        // TARGET_CC は例えば
+        //   .../toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android24-clang
+        // という形なので、そこから2階層上の sysroot ディレクトリを組み立てる。
+        let target_cc = env::var("TARGET_CC")
+            .or_else(|_| env::var("CC"))
+            .map_err(|_| {
+                "Android cross-compile requires TARGET_CC to be set (normally provided by the \
+                 Android NDK toolchain) so that bindgen can locate the NDK sysroot"
+                    .to_owned()
+            })?;
+
+        let sysroot = Path::new(&target_cc)
+            .parent() // .../bin
+            .and_then(|p| p.parent()) // .../prebuilt/<host-tag>
+            .map(|p| p.join("sysroot"))
+            .ok_or_else(|| format!("could not determine NDK sysroot from TARGET_CC={target_cc:?}"))?;
+
+        if !sysroot.exists() {
+            return Err(format!(
+                "NDK sysroot not found at {sysroot:?} (derived from TARGET_CC={target_cc:?})"
+            ).into());
+        }
+
+        return Ok(Some(sysroot.to_string_lossy().into_owned()));
+    }
+
     Ok(None)
 }
 
@@ -298,6 +330,25 @@ fn generate_bindings(target: &Target, path: &Path, sysroot: Option<String>) -> R
 
     if target.os == "windows" {
         builder = builder.clang_arg("-UHAVE_OBJCOPY");
+    }
+
+    if target.os == "android" {
+        // sysroot だけでは不十分で、--target を明示しないと libclang が
+        // ホストのターゲット(例: x86_64-unknown-linux-gnu)だと誤認したまま
+        // ヘッダを解析してしまう。TARGET_CC のファイル名
+        // (例: aarch64-linux-android24-clang) からそのまま clang ターゲット
+        // トリプルを取り出す。cc-rs が実際に使うコンパイラと完全に同じ
+        // ターゲット/APIレベルになるので、ABI不整合も避けられる。
+        let target_cc = env::var("TARGET_CC").or_else(|_| env::var("CC")).ok();
+        let clang_target = target_cc
+            .as_deref()
+            .and_then(|cc| Path::new(cc).file_name())
+            .and_then(|f| f.to_str())
+            .and_then(|f| f.strip_suffix("-clang").or_else(|| f.strip_suffix("-clang++")))
+            .map(str::to_owned)
+            .unwrap_or_else(|| format!("{}-linux-android", target.arch));
+
+        builder = builder.clang_arg(format!("--target={clang_target}"));
     }
 
     builder = builder
