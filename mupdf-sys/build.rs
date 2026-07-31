@@ -532,8 +532,8 @@ impl Build {
                 self.define_bool(font, true);
                 //self.define_bool(font, !cfg!(feature = "all-fonts"));
             } else {
-                self.define_bool(font, false);
-                //self.define_bool(font, true);
+                //self.define_bool(font, false);
+                self.define_bool(font, true);
             }
         }
         if target_os == "windows" {
