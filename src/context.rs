@@ -178,6 +178,40 @@ pub(crate) fn context() -> *mut fz_context {
     Context::get().inner
 }
 
+/// Returns a new `fz_context` handle in the same context group (shared
+/// memory allocator, locks, glyph/font cache, store) as every context this
+/// crate hands out via [`Context::get()`] on any thread.
+///
+/// Use this instead of an independently created `fz_context` (e.g. a bare
+/// `fz_new_context()` call) whenever your code needs to mix objects
+/// (`fz_font`, `fz_buffer`, etc.) with ones produced by this crate's font
+/// resolution hooks (`system-fonts` / `bundled-fonts-*` / a registered
+/// [`crate::FontLoader`]). Those hooks build their `fz_font` objects using
+/// this crate's own context (see `font.rs`'s use of `crate::context()`), and
+/// MuPDF requires such objects to only be used with contexts from the *same*
+/// context group.
+///
+/// Calling [`crate::install_system_font_funcs`] on an unrelated,
+/// independently created `fz_context` does **not** fix this by itself: the
+/// hooks would still hand back `fz_font` objects belonging to a different,
+/// incompatible context group, and using them (even just via `fz_keep_font`)
+/// is undefined behavior -- typically manifesting as memory corruption,
+/// crashes, or deadlocks under load, not an immediate obvious error.
+///
+/// The caller owns the returned pointer and must eventually call
+/// `fz_drop_context` on it exactly once.
+///
+/// # Safety
+/// The returned pointer must be dropped exactly once via `fz_drop_context`.
+pub unsafe fn new_context() -> *mut fz_context {
+    let base_ctx = BASE_CONTEXT.lock().unwrap();
+    let new_ctx = unsafe { fz_clone_context(base_ctx.0) };
+    if new_ctx.is_null() {
+        panic!("failed to clone fz_context");
+    }
+    new_ctx
+}
+
 #[cfg(test)]
 mod test {
     use std::sync::Mutex;
