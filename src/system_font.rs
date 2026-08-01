@@ -102,6 +102,30 @@ pub(crate) unsafe extern "C" fn load_system_fallback_font(
     }
 }
 
+/// Installs this crate's font-resolution hooks (the registered
+/// [`FontLoader`](crate::FontLoader), then the built-in `system-fonts` /
+/// `bundled-fonts-*` loaders) onto an arbitrary `fz_context`.
+///
+/// This crate's own [`crate::Context`] does this automatically for the
+/// `fz_context` it creates internally. Call this explicitly for any
+/// `fz_context` created by other means (e.g. directly via MuPDF's C API,
+/// bypassing this crate's context management) so that non-embedded CJK /
+/// other-script fonts can still be substituted through the same mechanism.
+///
+/// # Safety
+/// `ctx` must be a valid, non-null `fz_context` pointer, and must not be
+/// dropped/freed while still in use by MuPDF.
+pub unsafe fn install_system_font_funcs(ctx: *mut fz_context) {
+    unsafe {
+        fz_install_load_system_font_funcs(
+            ctx,
+            Some(load_system_font),
+            Some(load_system_cjk_font),
+            Some(load_system_fallback_font),
+        );
+    }
+}
+
 /// Looks up fonts installed on the system via `font-kit`.
 // `font-kit` is only a dependency on non-Android, non-wasm targets.
 #[cfg(all(
