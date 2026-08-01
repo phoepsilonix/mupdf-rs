@@ -107,10 +107,28 @@ pub(crate) unsafe extern "C" fn load_system_fallback_font(
 /// `bundled-fonts-*` loaders) onto an arbitrary `fz_context`.
 ///
 /// This crate's own [`crate::Context`] does this automatically for the
-/// `fz_context` it creates internally. Call this explicitly for any
-/// `fz_context` created by other means (e.g. directly via MuPDF's C API,
-/// bypassing this crate's context management) so that non-embedded CJK /
-/// other-script fonts can still be substituted through the same mechanism.
+/// `fz_context` it creates internally.
+///
+/// # This is not sufficient on its own for an independently created `fz_context`
+///
+/// The hook implementations construct their `fz_font` objects using this
+/// crate's *own* context (see [`crate::new_context`]'s docs for why), not the
+/// `ctx` MuPDF happens to pass into the hook at call time. If `ctx` belongs to
+/// a different context group than this crate's (e.g. a bare, independent
+/// `fz_new_context()` call rather than a clone of this crate's shared
+/// context), the `fz_font` objects handed back are **not valid for use with
+/// `ctx`** even though installation "succeeds" and MuPDF will call these
+/// hooks without complaint -- using them typically corrupts memory, crashes,
+/// or deadlocks rather than failing loudly.
+///
+/// For any `fz_context` your own code creates, prefer obtaining it via
+/// [`crate::new_context`] (a clone of this crate's shared context group) in
+/// the first place, which needs no separate hook installation step and is
+/// safe to mix with objects from this crate. Only reach for this function if
+/// you specifically need hooks on a context you know is already a clone of
+/// this crate's shared context group (in which case it is a no-op, since
+/// clones already have them) or you have otherwise verified the context
+/// groups are compatible.
 ///
 /// # Safety
 /// `ctx` must be a valid, non-null `fz_context` pointer, and must not be
