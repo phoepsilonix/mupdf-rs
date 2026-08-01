@@ -103,6 +103,7 @@ pub use error::Error;
 pub use file_path::FilePath;
 pub use font::{CjkFontOrdering, Font, SimpleFontEncoding, WriteMode};
 pub use font_loader::{set_font_loader, AndroidFontLoader, FontHints, FontLoader};
+pub use system_font::install_system_font_funcs;
 pub use glyph::Glyph;
 pub use image::{DisplayListImage, Image};
 pub use link::Link;
