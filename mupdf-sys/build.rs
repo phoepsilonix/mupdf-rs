@@ -540,9 +540,11 @@ impl Build {
             // mupdf-sys so the crate remains below crates.io's package limit.
             if target_os != "windows" {
                 self.define_bool(font, true);
+                //self.define_bool(font, false);
                 //self.define_bool(font, !cfg!(feature = "all-fonts"));
             } else {
-                self.define_bool(font, false);
+                self.define_bool(font, true);
+                //self.define_bool(font, false);
                 //self.define_bool(font, true);
             }
         }
