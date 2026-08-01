@@ -92,6 +92,7 @@ pub use color_params::{ColorParams, RenderingIntent};
 pub use colorspace::Colorspace;
 pub(crate) use context::context;
 pub use context::Context;
+pub use context::new_context;
 pub use cookie::Cookie;
 pub use destination::{Destination, DestinationKind};
 pub use device::{BlendMode, Device, DisplayListDevice, Function, NativeDevice};
